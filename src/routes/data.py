@@ -3,17 +3,18 @@ from fastapi.responses import JSONResponse
 import os
 import aiofiles
 import logging
+from .schemes.data import ProcessRequest
 
 
 logger = logging.getLogger('uvicorn.error')
 try:
     from src.models import ResponseSignal
     from src.helpers.config import get_settings, settings
-    from src.controllers import DataController, ProjectController
+    from src.controllers import DataController, ProjectController, ProcessControllers
 except ModuleNotFoundError:
     from models import ResponseSignal
     from helpers.config import get_settings, settings
-    from controllers import DataController, ProjectController
+    from controllers import DataController, ProjectController, ProcessControllers
 
 
 data_router = APIRouter(
@@ -40,7 +41,6 @@ async def upload_data(
         )
 
 
-    project_dir_path = ProjectController().get_project_path(project_id=project_id)
     file_path, file_id = data_controller.generate_unique_filepath(
         orig_file_name=file.filename,
         project_id=project_id
@@ -70,3 +70,47 @@ async def upload_data(
         "file_id" : file_id
              }
                         )
+
+
+@data_router.post("/process/{project_id}")
+async def process_endpoint(project_id: str, process_request: ProcessRequest):
+    file_id = process_request.file_id
+    chunk_size = process_request.chunk_size
+    overlap_size = process_request.overlab_size
+    do_reset = process_request.do_reset
+    _ = do_reset
+
+    process_controller = ProcessControllers(project_id=project_id)
+
+    try:
+        file_content = process_controller.get_file_content(file_id=file_id)
+        file_chunks = process_controller.process_file_content(
+            file_content=file_content,
+            file_id=file_id,
+            chunk_size=chunk_size,
+            overlap_size=overlap_size,
+        )
+    except Exception as e:
+        logger.error(f"Error while processing file: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"signal": ResponseSignal.PROCESSINF_FAILD.value},
+        )
+
+    if file_chunks is None or len(file_chunks) == 0:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"signal": ResponseSignal.PROCESSINF_FAILD.value},
+        )
+
+    serializable_chunks = [
+        {"page_content": chunk.page_content, "metadata": chunk.metadata}
+        for chunk in file_chunks
+    ]
+    return JSONResponse(
+        content={
+            "signal": ResponseSignal.PROCESSING_SUCESS.value,
+            "chunks": serializable_chunks,
+        }
+    )
+
