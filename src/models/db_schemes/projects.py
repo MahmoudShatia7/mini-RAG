@@ -9,10 +9,25 @@ class Project(BaseModel):
 
     @classmethod
     @field_validator("project_id")
-    def validate_project(cls, value):
+    def validate_project_id(cls, value):
         if not value.isalnum():
             raise ValueError ('project_id Must be Alphanumeric')
 
         return value
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+
+    @classmethod
+    def get_indexes(cls) :
+        
+        return [
+            {
+                "key" :[
+                    ("project_id",1)
+                ],
+                "name" : "project_id_index_1",
+                "unique" : True
+            }
+        ]
+
+
