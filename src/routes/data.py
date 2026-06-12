@@ -8,15 +8,19 @@ from .schemes.data import ProcessRequest
 logger = logging.getLogger('uvicorn.error')
 try:
     from src.models import ResponseSignal
-    from src.models.db_schemes import DataChunk
+    from src.models.db_schemes import Asset, DataChunk
+    from src.models.AssetModels import AssetModel
+    from src.models.AssetTypeEnum import AssetTypeEnum
     from src.models.ChunkModel import ChunkModel
     from src.models.ProjectModel import ProjectModel
     from src.helpers.config import get_settings, settings
     from src.controllers import DataController, ProjectController, ProcessControllers
 except ModuleNotFoundError:
     from models import ResponseSignal
-    from models.db_schemes import DataChunk
+    from models.db_schemes import DataChunk , Asset
     from models.ChunkModel import ChunkModel
+    from models.AssetModels import AssetModel
+    from models.AssetTypeEnum import AssetTypeEnum
     from models.ProjectModel import ProjectModel
     from helpers.config import get_settings, settings
     from controllers import DataController, ProjectController, ProcessControllers
@@ -77,12 +81,27 @@ async def upload_data(
                 "signal" : ResponseSignal.FILE_UPLOADED_FAILED.value
             }
         )
+    
+
+    # store asset metadata in the database
+    asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+
+    asset_resource = Asset(
+        asset_project_id=project.id,
+        asset_type=AssetTypeEnum.FILE.value,
+        asset_name=file_id,
+        asset_size = os.path.getsize(file_path),
+    )
+
+    asset_record= await asset_model.create_asset(asset=asset_resource)
+
 
 
     return JSONResponse (
     content= {
         "signal" : ResponseSignal.FILE_UPLOADED_PASSED.value,
         "file_id" : file_id,
+        "asset_id": str(asset_record.id),
         "project_id": str(project.id)
              }
                         )
@@ -138,7 +157,7 @@ async def process_endpoint(request : Request,project_id: str, process_request: P
         for i , chunk in enumerate (file_chunks) 
     ]
 
-    chunk_model = ChunkModel (
+    chunk_model = ChunkModel(
         db_client=request.app.db_client
     )
 
