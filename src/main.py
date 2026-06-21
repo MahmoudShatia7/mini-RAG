@@ -8,7 +8,7 @@ from src.routes import base, data
 from src.models.ProjectModel import ProjectModel
 from src.models.ChunkModel import ChunkModel
 from src.models.AssetModels import AssetModel
-from src.stores.LLMProviderFactory import LLMProviderFactory
+from src.stores.llm.LLMProviderFactory import LLMProviderFactory
 
 
 @asynccontextmanager
