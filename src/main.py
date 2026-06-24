@@ -4,11 +4,12 @@ from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from src.helpers.config import get_settings
-from src.routes import base, data
+from src.routes import base, data , nlp
 from src.models.ProjectModel import ProjectModel
 from src.models.ChunkModel import ChunkModel
 from src.models.AssetModels import AssetModel
 from src.stores.llm.LLMProviderFactory import LLMProviderFactory
+from src.stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
 
 
 @asynccontextmanager
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
     await AssetModel.create_instance(db_client=app.db_client)
 
     llm_provider_factory = LLMProviderFactory(config=settings)
+    vectordb_provider_factory = VectorDBProviderFactory(config=settings)
 
     # Initialize LLM clients.
     app.generation_client = llm_provider_factory.create(provider=settings.GENERATION_BACKEND)
@@ -32,13 +34,21 @@ async def lifespan(app: FastAPI):
     app.embedding_client = llm_provider_factory.create(provider=settings.EMBEDDING_BACKEND)
     app.embedding_client.set_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_MODEL_SIZE)
 
+    # Vector DB client
+    app.vectordb_client = vectordb_provider_factory.create(
+        provider = settings.VECTOR_DB_BACKEND
+    )
+    app.vectordb_client.connect()
+
     try:
         yield
     finally:
         app.mongo_connection.close()
+        app.vectordb_client.disconnect()
 
 
 app = FastAPI(lifespan=lifespan)
 
 app.include_router(base.base_router)
 app.include_router(data.data_router)
+app.include_router(nlp.nlp_router)
