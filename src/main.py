@@ -10,6 +10,7 @@ from src.models.ChunkModel import ChunkModel
 from src.models.AssetModels import AssetModel
 from src.stores.llm.LLMProviderFactory import LLMProviderFactory
 from src.stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
+from src.stores.llm.templates.template_parser import TemplateParser
 
 
 @asynccontextmanager
@@ -33,6 +34,10 @@ async def lifespan(app: FastAPI):
 
     app.embedding_client = llm_provider_factory.create(provider=settings.EMBEDDING_BACKEND)
     app.embedding_client.set_embedding_model(settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_MODEL_SIZE)
+    app.template_parser = TemplateParser(
+        language=settings.PRIMARY_LANGUAGE,
+        default_language=settings.DEFAULT_LANGUAGE
+    )
 
     # Vector DB client
     app.vectordb_client = vectordb_provider_factory.create(
@@ -45,7 +50,6 @@ async def lifespan(app: FastAPI):
     finally:
         app.mongo_connection.close()
         app.vectordb_client.disconnect()
-
 
 app = FastAPI(lifespan=lifespan)
 
