@@ -24,6 +24,7 @@ class CoHereProvider(LLMInterface):
         self.client = cohere.Client(self.api_key)
 
         self.logger = logging.getLogger(__name__)
+        self.enums = CoHereEnum
 
 
     def set_generation_model (self,model_id: str):
@@ -48,14 +49,40 @@ class CoHereProvider(LLMInterface):
         
         max_output_tokens = max_output_tokens if max_output_tokens is not None else self.default_generation_max_output_tokens
         temperature = temperature if temperature is not None else self.default_generation_temperature
+        chat_history = chat_history or []
 
-        response = self.client.chat(
-            model=self.generation_model_id,
-            message=self.process_text(prompt),
-            chat_history=chat_history,
-            max_tokens=max_output_tokens,
-            temperature=temperature
-        )
+        cohere_chat_history = []
+        system_prompts = []
+        for item in chat_history:
+            role = item.get("role")
+            message = item.get("message") or item.get("content")
+
+            if not role or not message:
+                continue
+
+            if role == CoHereEnum.SYSTEM.value:
+                system_prompts.append(message)
+                continue
+
+            cohere_chat_history.append({
+                "role": role,
+                "message": message
+            })
+
+        if system_prompts:
+            prompt = "\n\n".join(system_prompts + [prompt])
+
+        try:
+            response = self.client.chat(
+                model=self.generation_model_id,
+                message=prompt.strip(),
+                chat_history=cohere_chat_history,
+                max_tokens=max_output_tokens,
+                temperature=temperature
+            )
+        except Exception as e:
+            self.logger.error(f"Cohere generation request failed: {e}")
+            return None
 
         if not response or not response.text:
             self.logger.error("No response received from Cohere API.")
@@ -75,12 +102,16 @@ class CoHereProvider(LLMInterface):
         if document_type == DocumentTypeEnum.QUERY.value:
             input_type = CoHereEnum.QUERY
 
-        response = self.client.embed(
-            model=self.embedding_model_id,
-            texts=[self.process_text(text)],
-            input_type=input_type.value,
-            embedding_types=['float'],
-        )
+        try:
+            response = self.client.embed(
+                model=self.embedding_model_id,
+                texts=[self.process_text(text)],
+                input_type=input_type.value,
+                embedding_types=['float'],
+            )
+        except Exception as e:
+            self.logger.error(f"Cohere embedding request failed: {e}")
+            return None
 
         if not response or not response.embeddings or not response.embeddings.float:
             self.logger.error("No embeddings received from Cohere API.")
@@ -91,5 +122,5 @@ class CoHereProvider(LLMInterface):
     def construct_prompt (self , prompt : str , role: str ):
         return{
             "role" : role,
-            "content" : self.process_text(prompt)
+            "message" : self.process_text(prompt)
         }

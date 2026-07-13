@@ -1,6 +1,6 @@
 from ..LLMInterface import LLMInterface
 from ..LLMEnums import OpenAIEnum
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 import logging
 
 
@@ -26,6 +26,7 @@ class OpenAIProvider(LLMInterface):
 
         self.client = OpenAI(**client_kwargs)
         
+        self.enums = OpenAIEnum
         self.logger = logging.getLogger(__name__)
 
     def set_generation_model (self,model_id: str):
@@ -50,14 +51,21 @@ class OpenAIProvider(LLMInterface):
         max_output_tokens = max_output_tokens if max_output_tokens is not None else self.default_generation_max_output_tokens
         temperature = temperature if temperature is not None else self.default_generation_temperature
         chat_history = chat_history or []
-        chat_history.append(self.construct_prompt(prompt=prompt, role=OpenAIEnum.USER.value))
+        chat_history.append({
+            "role": OpenAIEnum.USER.value,
+            "content": prompt.strip()
+        })
 
-        response = self.client.chat.completions.create(
-            model=self.generation_model_id,
-            messages=chat_history,
-            max_tokens=max_output_tokens,
-            temperature=temperature
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.generation_model_id,
+                messages=chat_history,
+                max_tokens=max_output_tokens,
+                temperature=temperature
+            )
+        except OpenAIError as e:
+            self.logger.error(f"OpenAI generation request failed: {e}")
+            return None
         
 
         if not response or not response.choices or len(response.choices) == 0 or not response.choices[0].message:
@@ -76,10 +84,14 @@ class OpenAIProvider(LLMInterface):
             self.logger.error("Embedding model ID is not set.")
             return None
         
-        response = self.client.embeddings.create(
-            input=text,
-            model=self.embedding_model_id
-        )
+        try:
+            response = self.client.embeddings.create(
+                input=text,
+                model=self.embedding_model_id
+            )
+        except OpenAIError as e:
+            self.logger.error(f"OpenAI embedding request failed: {e}")
+            return None
 
         if not response or not response.data or len(response.data) == 0 or not response.data[0].embedding:
             self.logger.error("No embedding returned from OpenAI.")
