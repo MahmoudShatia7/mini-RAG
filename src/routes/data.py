@@ -6,24 +6,14 @@ import logging
 from .schemes.data import ProcessRequest
 
 logger = logging.getLogger('uvicorn.error')
-try:
-    from src.models import ResponseSignal
-    from src.models.db_schemes import Asset, DataChunk
-    from src.models.AssetModels import AssetModel
-    from src.models.AssetTypeEnum import AssetTypeEnum
-    from src.models.ChunkModel import ChunkModel
-    from src.models.ProjectModel import ProjectModel
-    from src.helpers.config import get_settings, settings
-    from src.controllers import DataController, ProjectController, ProcessControllers
-except ModuleNotFoundError:
-    from models import ResponseSignal
-    from models.db_schemes import DataChunk , Asset
-    from models.ChunkModel import ChunkModel
-    from models.AssetModels import AssetModel
-    from models.AssetTypeEnum import AssetTypeEnum
-    from models.ProjectModel import ProjectModel
-    from helpers.config import get_settings, settings
-    from controllers import DataController, ProjectController, ProcessControllers
+from src.models import ResponseSignal
+from src.models.db_schemes import Asset, DataChunk
+from src.models.AssetModels import AssetModel
+from src.models.AssetTypeEnum import AssetTypeEnum
+from src.models.ChunkModel import ChunkModel
+from src.models.ProjectModel import ProjectModel
+from src.helpers.config import get_settings, settings
+from src.controllers import DataController, ProcessControllers, NLPController
 
 
 data_router = APIRouter(
@@ -35,7 +25,7 @@ data_router = APIRouter(
 @data_router.post("/upload/{project_id}")
 async def upload_data(
     request : Request ,
-    project_id: str,
+    project_id: int,
     file: UploadFile = File(...),
     app_settings: settings = Depends(get_settings),
 ):
@@ -87,7 +77,7 @@ async def upload_data(
     asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
 
     asset_resource = Asset(
-        asset_project_id=project.id,
+        asset_project_id=project.project_id,
         asset_type=AssetTypeEnum.FILE.value,
         asset_name=file_id,
         asset_size = os.path.getsize(file_path),
@@ -101,14 +91,14 @@ async def upload_data(
     content= {
         "signal" : ResponseSignal.FILE_UPLOADED_PASSED.value,
         "file_id" : file_id,
-        "asset_id": str(asset_record.id),
-        "project_id": str(project.id)
+        "asset_id": str(asset_record.asset_id),
+        "project_id": str(project.project_id)
              }
                         )
 
 
 @data_router.post("/process/{project_id}")
-async def process_endpoint(request : Request,project_id: str, process_request: ProcessRequest):
+async def process_endpoint(request : Request,project_id: int, process_request: ProcessRequest):
 
 
     chunk_size = process_request.chunk_size
@@ -125,6 +115,13 @@ async def process_endpoint(request : Request,project_id: str, process_request: P
         project_id=project_id
     )
 
+    nlp_controller = NLPController(
+        vectordb_client=request.app.vectordb_client,
+        embedding_client=request.app.embedding_client,
+        generation_client=request.app.generation_client,
+        template_parser=request.app.template_parser
+    )   
+
     process_controller = ProcessControllers(project_id=project_id)
 
 
@@ -132,7 +129,7 @@ async def process_endpoint(request : Request,project_id: str, process_request: P
     project_files_ids = {}
     if process_request.file_id :
         asset_record = await asset_model.get_asset_record(
-            asset_project_id=project.id,
+            asset_project_id=project.project_id,
             asset_name=process_request.file_id
         )
 
@@ -148,15 +145,15 @@ async def process_endpoint(request : Request,project_id: str, process_request: P
                 content={"signal": ResponseSignal.FILE_ID_ERROR.value},
             )
 
-        project_files_ids = {asset_record.id: asset_record.asset_name}
+        project_files_ids = {asset_record.asset_id: asset_record.asset_name}
     else :
         project_files = await asset_model.get_all_project_assets(
-            asset_project_id=project.id,
+            asset_project_id=project.project_id,
             asset_type=AssetTypeEnum.FILE.value
         )
 
         project_files_ids = {
-            record.id: record.asset_name
+            record.asset_id: record.asset_name
             for record in project_files
         }
 
@@ -182,8 +179,10 @@ async def process_endpoint(request : Request,project_id: str, process_request: P
     )
 
     if do_reset ==1 :
+        collection_name = nlp_controller.create_collection_name(project_id=project.project_id)
+        _ = await request.app.vectordb_client.delete_collection(collection_name=collection_name)
         _ = await chunk_model.delete_chunk_by_project_id(
-            project_id=project.id
+            project_id=project.project_id
         )
 
         
@@ -217,7 +216,7 @@ async def process_endpoint(request : Request,project_id: str, process_request: P
                 chunk_text=chunk.page_content,
                 chunk_metadata=chunk.metadata,
                 chunk_order=i + 1,
-                chunk_project_id=project.id,
+                chunk_project_id=project.project_id,
                 chunk_asset_id=asset_id,
             )
             for i, chunk in enumerate(file_chunks)

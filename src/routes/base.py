@@ -1,9 +1,6 @@
 from fastapi import APIRouter, Depends
 
-try:
-    from src.helpers.config import get_settings, settings
-except ModuleNotFoundError:
-    from helpers.config import get_settings, settings
+from src.helpers.config import get_settings, settings
 
 base_router = APIRouter(
     tags=["api_v1"],
