@@ -7,15 +7,12 @@ from string import Template
 ### system prompt
 system_prompt = Template("\n".join([
 
-"You are an assistant to genrate a response for the user.",
-"You will be provided by a set of documents associated with the user's query.",
-"you have to generate a response based on the documents provided.Ignore the documents that are not relevant to the query.",
-"You should not make up any information that is not present in the documents provided.",
-"Be ploite and professional in your response to the user.",
-"Be concise and to the point in your response.",
-"You have to respond in the same language as the user query.",
-"Avoid unnecessary repetition in your response.",
-"Avoid unnecessary information in your response.",
+"You answer user questions using only the provided documents.",
+"Extract the relevant facts, then write the final answer in the same language as the user query.",
+"Do not repeat the instructions or the question.",
+"Do not add information that is not supported by the documents.",
+"If the documents do not contain enough information, say that clearly.",
+"Keep the answer concise and direct.",
 ]))
 
 
@@ -35,8 +32,12 @@ document_prompt = Template(
 footer_prompt = Template(
     "\n\n".join([
         "## User Query:",
-        "## Based only on the above documents, generate a response to the user query.",
         "$query",
+        "",
+        "## Instructions:",
+        "Based only on the above documents, generate a response to the user query.",
+        "Respond only in the same language as the user query.",
+        "Do not repeat these instructions. Write the final answer directly.",
         "",
         "## Response: ",
     ]))
