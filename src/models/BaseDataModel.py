@@ -1,7 +1,4 @@
-try:
-    from src.helpers.config import get_settings
-except ModuleNotFoundError:
-    from helpers.config import get_settings
+from src.helpers.config import get_settings
 
 class BaseDataModel ():
 

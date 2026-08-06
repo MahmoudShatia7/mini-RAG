@@ -5,10 +5,7 @@ from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-try:
-    from src.models import ProcessingEnum
-except ModuleNotFoundError:
-    from models import ProcessingEnum
+from src.models import ProcessingEnum
 
 class ProcessControllers (BaseController) :
 

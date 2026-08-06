@@ -1,10 +1,7 @@
 from .BaseController import BaseController
 from fastapi import UploadFile
 from .ProjectController import ProjectController
-try:
-    from src.models import ResponseSignal
-except ModuleNotFoundError:
-    from models import ResponseSignal
+from src.models import ResponseSignal
 
 import re
 import os 
@@ -62,4 +59,3 @@ class DataController(BaseController) :
             return "uploaded_file"
 
         return cleaned_file_name
-
