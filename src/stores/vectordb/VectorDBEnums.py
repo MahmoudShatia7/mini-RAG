@@ -19,7 +19,7 @@ class PgvectorSchemaEnums(Enum):
 
 class PgvectorDistanceMethodEnums(Enum):
     COSINE = "vector_cosine_ops"
-    DOT = "vector_l2_ops"
+    DOT = "vector_ip_ops"
 
 class PgvectorIndexTypeEnums(Enum):
     IVFFLAT = "ivfflat"

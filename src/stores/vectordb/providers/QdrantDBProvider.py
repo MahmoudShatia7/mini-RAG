@@ -85,7 +85,7 @@ class QdrantDBProvider (VectorDBInterface):
 
         return True
     
-    async def insert_many(self, collection_name: str, texts: list, vectors: List, metadata: list = None, record_id: list = None, batch_size: int = 50):
+    async def insert_many(self, collection_name: str, texts: list, vectors: List, metadata: list = None, record_id: list = None, batch_size: int = 50, build_index: bool = True):
         if metadata is None:
             metadata = [None] * len(texts)
         if record_id is None :
@@ -144,3 +144,7 @@ class QdrantDBProvider (VectorDBInterface):
             )
             for r in points
 ]
+
+    async def build_index(self, collection_name: str):
+        """Qdrant maintains its own index, so there is nothing to build here."""
+        return False

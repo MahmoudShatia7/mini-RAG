@@ -11,11 +11,7 @@ class VectorDBProviderFactory:
 
     async def create(self, provider: str):
         provider = provider.upper()
-        index_threshold = getattr(
-            self.config,
-            "PGVECTOR_INDEX_THRESHOLD",
-            getattr(self.config, "VEXCTOR_DB_PGVEC_INDEX_THRESHOLD", 100),
-        )
+        index_threshold = self.config.PGVECTOR_INDEX_THRESHOLD
 
         if provider == VectorDBEnums.QDRANT.value:
             Qdrant_db_client = self.base_controller.get_database_path(db_name=self.config.VECTOR_DB_PATH)

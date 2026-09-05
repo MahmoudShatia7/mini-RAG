@@ -48,8 +48,14 @@ class VectorDBInterface(ABC):
                    vectors: List,
                    metadata: list = None, 
                    record_id: list = None,
-                   batch_size: int = 50
+                   batch_size: int = 50,
+                   build_index: bool = True
                     ):
+        pass 
+
+    @abstractmethod
+    def build_index(self, collection_name: str):
+        """Build the ANN index for a collection once bulk loading has finished."""
         pass 
 
     @abstractmethod

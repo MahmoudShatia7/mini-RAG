@@ -12,6 +12,9 @@ from tqdm import tqdm
 
 logger = logging.getLogger('uvicorn.error')
 
+# Fallback page size when the embedding provider declares no batch size.
+DEFAULT_CHUNK_PAGE_SIZE = 50
+
 nlp_router = APIRouter(
     prefix = "/api/v1/nlp",
     tags = ["api_v1" , "nlp"],
@@ -52,6 +55,12 @@ async def index_project(request : Request , project_id : int , push_request : Pu
 
         page_no = 1
         inserted_items_count = 0
+
+        # Page chunks in whatever batch the embedding client is configured for,
+        # otherwise a smaller page caps the batch and wastes provider calls.
+        page_size = getattr(
+            request.app.embedding_client, "default_embedding_batch_size", None
+        ) or DEFAULT_CHUNK_PAGE_SIZE
         collection_name = nlp_controllers.create_collection_name(project_id=project.project_id)
 
         _ = await nlp_controllers.vectordb_client.create_collection(
@@ -62,13 +71,14 @@ async def index_project(request : Request , project_id : int , push_request : Pu
 
         total_chunks_count = await chunk_model.get_project_chunk_count(project_id=project.project_id)
         logger.info(
-            "Starting vector indexing for project %s with %s chunks.",
+            "Indexing project %s: %s chunks -> %s",
             project.project_id,
             total_chunks_count,
+            collection_name,
         )
         pbar = tqdm(
             total=total_chunks_count,
-            desc=f"Indexing project {project.project_id}",
+            desc="Vector Indexing",
             position=0,
             unit="chunk",
             file=sys.stderr,
@@ -80,7 +90,7 @@ async def index_project(request : Request , project_id : int , push_request : Pu
 
         try:
             while has_records :
-                page_chunks = await chunk_model.get_project_chunk(project_id=project.project_id, page_no=page_no)
+                page_chunks = await chunk_model.get_project_chunk(project_id=project.project_id, page_no=page_no, page_size=page_size)
                 if len(page_chunks) :
                     page_no +=1
                 
@@ -92,26 +102,40 @@ async def index_project(request : Request , project_id : int , push_request : Pu
                     project=project,
                     chunks=page_chunks,
                     do_reset=False,
+                    # Bulk load first; the ANN index is built once at the end so
+                    # the remaining rows are not inserted into a live graph.
+                    build_index=False,
                 )
 
                 if not is_inserted :
+                    logger.error(
+                        "Indexing failed for project %s after %s / %s chunks.",
+                        project.project_id,
+                        inserted_items_count,
+                        total_chunks_count,
+                    )
                     return JSONResponse(
-                        status_code = status.HTTP_400_BAD_REQUEST,
+                        status_code = status.HTTP_502_BAD_GATEWAY,
                     content = {
-                        "signal" : ResponseSignal.INSERT_INTO_VECTORDB_ERROR.value
+                        "signal" : ResponseSignal.INSERT_INTO_VECTORDB_ERROR.value,
+                        "inserted_items_count" : inserted_items_count,
+                        "total_chunks_count" : total_chunks_count
                     }
-                    ) 
+                    )
 
                 pbar.update(len(page_chunks))
                 inserted_items_count += len(page_chunks)
-                logger.info(
-                    "Indexed %s / %s chunks for project %s.",
-                    inserted_items_count,
-                    total_chunks_count,
-                    project.project_id,
-                )
         finally:
             pbar.close()
+
+        if inserted_items_count:
+            await nlp_controllers.build_vector_db_index(project=project)
+
+        logger.info(
+            "Indexed %s chunks for project %s.",
+            inserted_items_count,
+            project.project_id,
+        )
             
         return JSONResponse(
             content = {
