@@ -3,17 +3,47 @@ from fastapi import UploadFile
 from .ProjectController import ProjectController
 from src.models import ResponseSignal
 
+import logging
+import mimetypes
 import re
 import os 
+logger = logging.getLogger("uvicorn.error")
+
+
 class DataController(BaseController) :
 
     def __init__(self):
         super().__init__()
         self.size_scale = 1024 * 1024  # Convert MB to bytes
 
+    def resolve_content_type(self, file: UploadFile) -> str:
+        """Normalise the declared content type before checking it.
+
+        Clients legitimately send parameters ("text/plain; charset=utf-8"), and
+        some send "application/octet-stream" when they cannot infer a type at
+        all. Both are matched against the allowed list by media type alone,
+        falling back to the file extension when the header is uninformative.
+        """
+        declared = (file.content_type or "").split(";")[0].strip().lower()
+
+        if declared and declared != "application/octet-stream":
+            return declared
+
+        guessed, _ = mimetypes.guess_type(file.filename or "")
+        return (guessed or declared).lower()
+
     def validate_uploaded_file(self , file: UploadFile )  :
 
-        if file.content_type not in self.app_settings.FILE_ALLOWED_TYPES :
+        content_type = self.resolve_content_type(file=file)
+
+        if content_type not in self.app_settings.FILE_ALLOWED_TYPES :
+            logger.warning(
+                "Rejected upload %s: resolved type %r (declared %r) is not in %s.",
+                file.filename,
+                content_type,
+                file.content_type,
+                self.app_settings.FILE_ALLOWED_TYPES,
+            )
             return False , ResponseSignal.FILE_TYPE_NOT_SUPPORTED.value
 
         file_size = file.size or 0

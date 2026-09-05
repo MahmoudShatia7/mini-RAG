@@ -230,15 +230,10 @@ async def process_endpoint(request : Request,project_id: int, process_request: P
 
     no_records += await chunk_model.insert_many_chunks(chunks=file_chunks_records)
 
-    serializable_chunks = [
-        {"page_content": chunk.page_content, "metadata": chunk.metadata}
-        for chunk in all_file_chunks
-    ]
     return JSONResponse(
         content={
             "signal": ResponseSignal.PROCESSING_SUCESS.value,
             "inserted_chunks": no_records,
-            "chunks": serializable_chunks,
             "no_files": no_files,
         }
     )

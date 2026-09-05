@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import List
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,12 +39,21 @@ class settings(BaseSettings):
     VECTOR_DB_BACKEND: str
     VECTOR_DB_PATH: str
     VECTOR_DB_DISTANCE_METHOD: str
-    PGVECTOR_INDEX_THRESHOLD: int = 100
-    VEXCTOR_DB_PGVEC_INDEX_THRESHOLD: int = None
+    # Accepts the historic misspelling from older .env files as well.
+    PGVECTOR_INDEX_THRESHOLD: int = Field(
+        default=100,
+        validation_alias=AliasChoices(
+            "PGVECTOR_INDEX_THRESHOLD",
+            "VEXCTOR_DB_PGVEC_INDEX_THRESHOLD",
+        ),
+    )
 
     DEFAULT_LANGUAGE: str = "en"
     PRIMARY_LANGUAGE: str = "en"
-    model_config = SettingsConfigDict(env_file=Path(__file__).resolve().parents[1] / ".env")
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parents[1] / ".env",
+        extra="ignore",
+    )
 
 
 def get_settings():
