@@ -1,4 +1,6 @@
 from abc import ABC , abstractmethod
+from typing import List
+
 
 class LLMInterface(ABC):
 
@@ -12,15 +14,17 @@ class LLMInterface(ABC):
         pass
 
     @abstractmethod
-    def generate_text (self, prompt: str,chat_history: list = None, max_output_tokens: int = None, temperature: float = None) :
+    async def generate_text (self, prompt: str,chat_history: list = None, max_output_tokens: int = None, temperature: float = None) :
         pass
     
     @abstractmethod
-    def embed_text (self, text: str , document_type: str = None):
+    async def embed_text (self, text: str , document_type: str = None):
+        pass
+
+    @abstractmethod
+    async def embed_texts (self, texts: List[str] , document_type: str = None):
         pass
 
     @abstractmethod
     def construct_prompt (self , prompt : str , role: str ):
         pass 
-
-    

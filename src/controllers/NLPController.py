@@ -31,18 +31,24 @@ class NLPController (BaseController) :
 
         return collection_info
     
+    async def build_vector_db_index(self, project: Project):
+        """Build the ANN index after a bulk load, not during it."""
+        collection_name = self.create_collection_name(project_id=project.project_id)
+        return await self.vectordb_client.build_index(collection_name=collection_name)
+
     async def index_into_vector_db(
         self,
         project: Project,
         chunks: list[DataChunk],
         do_reset: bool = False,
+        build_index: bool = True,
     ):
         collection_name = self.create_collection_name(project_id = project.project_id)
 
         texts = [c.chunk_text for c in chunks]
         metadata = [c.chunk_metadata for c in chunks]
         record_ids = [c.chunk_id for c in chunks]
-        vectors = self.embedding_client.embed_texts(
+        vectors = await self.embedding_client.embed_texts(
             texts=texts,
             document_type=DocumentTypeEnum.DOCUMENT.value,
         )
@@ -73,6 +79,7 @@ class NLPController (BaseController) :
             vectors=vectors,
             metadata=metadata,
             record_id=record_ids,
+            build_index=build_index,
         )
         
         return is_inserted
@@ -81,7 +88,7 @@ class NLPController (BaseController) :
         collection_name = self.create_collection_name(project_id = project.project_id)
 
         query_vector = None
-        vector = self.embedding_client.embed_text(text=text,
+        vector = await self.embedding_client.embed_text(text=text,
                                                        document_type=DocumentTypeEnum.QUERY.value)
 
 
@@ -108,10 +115,21 @@ class NLPController (BaseController) :
 
         return results
 
+    ARABIC_QUERY_RATIO = 0.5
+
     def detect_query_language(self, query: str) -> str:
-        if query and re.search(r"[\u0600-\u06FF]", query):
+        if not query:
+            return "en"
+
+        arabic_letters = len(re.findall(r"[\u0600-\u06FF]", query))
+        all_letters = len(re.findall(r"[^\W\d_]", query, flags=re.UNICODE))
+
+        # A single Arabic term inside an English question should not switch the
+        # whole answer to Arabic, so decide on the proportion of Arabic letters.
+        if all_letters and (arabic_letters / all_letters) > self.ARABIC_QUERY_RATIO:
             return "ar"
-        return self.template_parser.language if self.template_parser else "en"
+
+        return "en"
     
 
     async def answer_rag_question(self, project: Project, query: str, limit: int = 10):
@@ -132,7 +150,7 @@ class NLPController (BaseController) :
             language=response_language
         )
 
-        document_prompts = "\n.".join([
+        document_prompts = "\n\n".join([
             self.template_parser.get(group="rag", key="document_prompt", vars={
 
                 "document_number": idx + 1,
@@ -157,7 +175,7 @@ class NLPController (BaseController) :
 
         full_prompt = "\n\n".join([document_prompts, footer_prompt])
 
-        answer = self.generation_client.generate_text(prompt=full_prompt, chat_history=chat_history)
+        answer = await self.generation_client.generate_text(prompt=full_prompt, chat_history=chat_history)
 
         if not answer:
             return None

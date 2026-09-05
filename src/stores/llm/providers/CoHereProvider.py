@@ -2,7 +2,7 @@ from ..LLMInterface import LLMInterface
 from ..LLMEnums import CoHereEnum , DocumentTypeEnum
 import cohere
 import logging
-import time
+import asyncio
 from typing import List, Union
 
 class CoHereProvider(LLMInterface):
@@ -11,7 +11,7 @@ class CoHereProvider(LLMInterface):
                   default_input_max_characters: int = 1000, 
                   default_generation_max_output_tokens: int = 1000,
                   default_generation_temperature: float = 0.1,
-                  default_embedding_batch_size: int = 8,
+                  default_embedding_batch_size: int = 96,
                   default_embedding_retries: int = 5):
         
         self.api_key = api_key
@@ -26,7 +26,7 @@ class CoHereProvider(LLMInterface):
         self.embedding_model_id = None
         self.embedding_size = None
 
-        self.client = cohere.Client(self.api_key)
+        self.client = cohere.AsyncClient(self.api_key)
 
         self.logger = logging.getLogger(__name__)
         self.enums = CoHereEnum
@@ -41,8 +41,21 @@ class CoHereProvider(LLMInterface):
 
     def process_text(self, text: str):
         return text[:self.default_input_max_characters].strip()
-    
-    def generate_text (self, prompt: str,chat_history: list = None, max_output_tokens: int = None, temperature: float = None) :
+
+    # A 429 can mean the per-minute rate limit, which clears on its own, or the
+    # monthly / trial allowance, which does not. Only the former is retryable.
+    QUOTA_EXHAUSTED_MARKERS = (
+        "calls / month",
+        "calls/month",
+        "per month",
+        "monthly limit",
+    )
+
+    def is_quota_exhausted(self, message: str) -> bool:
+        lowered = (message or "").lower()
+        return any(marker in lowered for marker in self.QUOTA_EXHAUSTED_MARKERS)
+
+    async def generate_text (self, prompt: str,chat_history: list = None, max_output_tokens: int = None, temperature: float = None) :
         
         if not self.client:
             self.logger.error("Cohere client is not initialized.")
@@ -78,7 +91,7 @@ class CoHereProvider(LLMInterface):
             prompt = "\n\n".join(system_prompts + [prompt])
 
         try:
-            response = self.client.chat(
+            response = await self.client.chat(
                 model=self.generation_model_id,
                 message=prompt.strip(),
                 chat_history=cohere_chat_history,
@@ -94,15 +107,15 @@ class CoHereProvider(LLMInterface):
             return None
         return response.text.strip()
     
-    def embed_text(self, text : Union[str, List[str]], document_type :str = None):
-        embeddings = self.embed_texts(texts=[text] if isinstance(text, str) else text, document_type=document_type)
+    async def embed_text(self, text : Union[str, List[str]], document_type :str = None):
+        embeddings = await self.embed_texts(texts=[text] if isinstance(text, str) else text, document_type=document_type)
         if embeddings is None:
             return None
         if isinstance(text, str):
             return embeddings[0] if embeddings else None
         return embeddings
 
-    def _embed_text_batch(self, texts: List[str], document_type: str = None):
+    async def _embed_text_batch(self, texts: List[str], document_type: str = None):
         if not self.client:
             self.logger.error("Cohere client is not initialized.")
             return None
@@ -115,9 +128,10 @@ class CoHereProvider(LLMInterface):
         if document_type == DocumentTypeEnum.QUERY.value:
             input_type = CoHereEnum.QUERY
 
+        response = None
         for attempt in range(self.default_embedding_retries + 1):
             try:
-                response = self.client.embed(
+                response = await self.client.embed(
                     model=self.embedding_model_id,
                     texts=[ self.process_text(t) for t in texts],
                     input_type=input_type.value,
@@ -128,6 +142,14 @@ class CoHereProvider(LLMInterface):
                 message = str(e)
                 is_rate_limit = "429" in message or "rate limit" in message.lower()
 
+                # A monthly quota 429 will not clear on its own, so backing off
+                # only wastes time and further calls against a dead budget.
+                if is_rate_limit and self.is_quota_exhausted(message):
+                    self.logger.error(
+                        f"Cohere quota exhausted, not retrying: {e}"
+                    )
+                    return None
+
                 if not is_rate_limit or attempt >= self.default_embedding_retries:
                     self.logger.error(f"Cohere embedding request failed: {e}")
                     return None
@@ -137,21 +159,21 @@ class CoHereProvider(LLMInterface):
                     f"Cohere rate limit hit while embedding {len(texts)} texts. "
                     f"Retrying in {sleep_seconds}s (attempt {attempt + 1}/{self.default_embedding_retries})."
                 )
-                time.sleep(sleep_seconds)
+                await asyncio.sleep(sleep_seconds)
 
         if not response or not response.embeddings or not response.embeddings.float:
             self.logger.error("No embeddings received from Cohere API.")
             return None
         return [ f for f in response.embeddings.float]
 
-    def embed_texts(self, texts: List[str], document_type: str = None):
+    async def embed_texts(self, texts: List[str], document_type: str = None):
         if not texts:
             return []
 
         all_embeddings = []
         for i in range(0, len(texts), self.default_embedding_batch_size):
             batch = texts[i : i + self.default_embedding_batch_size]
-            batch_embeddings = self._embed_text_batch(texts=batch, document_type=document_type)
+            batch_embeddings = await self._embed_text_batch(texts=batch, document_type=document_type)
             if batch_embeddings is None:
                 return None
             all_embeddings.extend(batch_embeddings)

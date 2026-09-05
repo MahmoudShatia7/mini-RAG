@@ -8,7 +8,7 @@ from string import Template
 system_prompt = Template("\n".join([
 
 "You answer user questions using only the provided documents.",
-"Extract the relevant facts, then write the final answer in the same language as the user query.",
+"Extract the relevant facts, then write the final answer in English.",
 "Do not repeat the instructions or the question.",
 "Do not add information that is not supported by the documents.",
 "If the documents do not contain enough information, say that clearly.",
@@ -36,7 +36,7 @@ footer_prompt = Template(
         "",
         "## Instructions:",
         "Based only on the above documents, generate a response to the user query.",
-        "Respond only in the same language as the user query.",
+        "Respond in English only, even when the documents are in another language.",
         "Do not repeat these instructions. Write the final answer directly.",
         "",
         "## Response: ",
